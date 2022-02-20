@@ -170,9 +170,9 @@ func main() {
 
 func waitForBirthDeps(birthDeps []string, namespace, podName string, timeout time.Duration) error {
 	// Cancel context on SIGTERM to trigger graceful exit
-	ctx := withCancelOnSignal(context.Background(), syscall.SIGTERM)
+	ctxParent, parentCancel := withCancelOnSignal(context.Background(), syscall.SIGTERM)
 
-	ctx, stopPodWatcher := context.WithTimeout(ctx, timeout)
+	ctx, stopPodWatcher := context.WithTimeout(ctxParent, timeout)
 	// Stop pod watcher on exit, if not sooner
 	defer stopPodWatcher()
 
@@ -186,6 +186,7 @@ func waitForBirthDeps(birthDeps []string, namespace, podName string, timeout tim
 
 	// Block until all birth deps are ready
 	<-ctx.Done()
+	parentCancel()
 	err = ctx.Err()
 	if err == context.DeadlineExceeded {
 		return fmt.Errorf("timed out waiting for birth deps to be ready: %s", timeout)
@@ -199,7 +200,7 @@ func waitForBirthDeps(birthDeps []string, namespace, podName string, timeout tim
 }
 
 // withCancelOnSignal calls cancel when one of the specified signals is recieved.
-func withCancelOnSignal(ctx context.Context, signals ...os.Signal) context.Context {
+func withCancelOnSignal(ctx context.Context, signals ...os.Signal) (context.Context, context.CancelFunc) {
 	ctx, cancel := context.WithCancel(ctx)
 
 	sigCh := make(chan os.Signal, 1)
@@ -214,15 +215,14 @@ func withCancelOnSignal(ctx context.Context, signals ...os.Signal) context.Conte
 					return
 				}
 				log.Info().Msgf("Received shutdown signal: %v", s)
-				cancel()
+				os.Exit(0)
 			case <-ctx.Done():
 				signal.Reset()
-				close(sigCh)
 			}
 		}
 	}()
 
-	return ctx
+	return ctx, cancel
 }
 
 // wait for the child to exit and return the exit code
@@ -279,7 +279,7 @@ func onReadyOfAll(birthDeps []string, callback func()) kubernetes.EventHandler {
 	}
 
 	return func(event watch.Event) {
-		fmt.Printf("Event Type: %v\n", event.Type)
+		log.Info().Msgf("Event Type: %v\n", event.Type)
 		// ignore Deleted (Watch will auto-stop on delete)
 		if event.Type == watch.Deleted {
 			return
