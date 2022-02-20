@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -12,6 +11,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/rs/zerolog/log"
 )
 
 type Supervisor struct {
@@ -39,7 +40,7 @@ func (s *Supervisor) Start() error {
 	s.startStopLock.Lock()
 	defer s.startStopLock.Unlock()
 
-	log.Printf("Starting: %s\n", s)
+	log.Info().Msgf("Starting: %s\n", s)
 	if err := s.cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start child process: %v", err)
 	}
@@ -56,7 +57,7 @@ func (s *Supervisor) Start() error {
 			}
 			// log everything but "urgent I/O condition", which gets noisy
 			if sig != syscall.SIGURG {
-				log.Printf("Received signal: %v\n", sig)
+				log.Info().Msgf("Received signal: %v\n", sig)
 			}
 			// ignore "child exited" signal
 			if sig == syscall.SIGCHLD {
@@ -64,7 +65,7 @@ func (s *Supervisor) Start() error {
 			}
 			err := s.cmd.Process.Signal(sig)
 			if err != nil {
-				log.Printf("Signal propegation failed: %v\n", err)
+				log.Info().Msgf("Signal propegation failed: %v\n", err)
 			}
 		}
 	}()
@@ -82,7 +83,7 @@ func (s *Supervisor) Wait() error {
 			s.shutdownTimer.Stop()
 		}
 	}()
-	log.Println("Waiting for child process to exit...")
+	log.Info().Msg("Waiting for child process to exit...")
 	return s.cmd.Wait()
 }
 
@@ -91,11 +92,11 @@ func (s *Supervisor) ShutdownNow() error {
 	defer s.startStopLock.Unlock()
 
 	if !s.isRunning() {
-		log.Println("Skipping ShutdownNow: child process not running")
+		log.Info().Msg("Skipping ShutdownNow: child process not running")
 		return nil
 	}
 
-	log.Println("Killing child process...")
+	log.Info().Msg("Killing child process...")
 	// TODO: Use Process.Kill() instead?
 	// Sending Interrupt on Windows is not implemented.
 	err := s.cmd.Process.Signal(syscall.SIGKILL)
@@ -110,7 +111,7 @@ func (s *Supervisor) ShutdownWithTimeout(timeout time.Duration) error {
 	defer s.startStopLock.Unlock()
 
 	if !s.isRunning() {
-		log.Println("Skipping ShutdownWithTimeout: child process not running")
+		log.Info().Msg("Skipping ShutdownWithTimeout: child process not running")
 		return nil
 	}
 
@@ -118,18 +119,18 @@ func (s *Supervisor) ShutdownWithTimeout(timeout time.Duration) error {
 		return errors.New("shutdown already started")
 	}
 
-	log.Println("Terminating child process...")
+	log.Info().Msg("Terminating child process...")
 	err := s.cmd.Process.Signal(syscall.SIGTERM)
 	if err != nil {
 		return fmt.Errorf("failed to terminate child process: %v", err)
 	}
 
 	s.shutdownTimer = time.AfterFunc(timeout, func() {
-		log.Printf("Timeout elapsed: %s\n", timeout)
+		log.Info().Msgf("Timeout elapsed: %s\n", timeout)
 		err := s.ShutdownNow()
 		if err != nil {
 			// TODO: ignorable?
-			log.Printf("Failed after timeout: %v\n", err)
+			log.Info().Msgf("Failed after timeout: %v\n", err)
 		}
 	})
 

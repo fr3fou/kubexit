@@ -3,7 +3,8 @@ package kubernetes
 import (
 	"context"
 	"fmt"
-	"log"
+
+	"github.com/rs/zerolog/log"
 
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -58,14 +59,14 @@ func WatchPod(ctx context.Context, namespace, podName string, eventHandler Event
 		// watch until deleted
 		_, err := watchtools.UntilWithSync(ctx, lw, &corev1.Pod{}, nil, func(event watch.Event) (bool, error) {
 			if event.Type == watch.Error {
-				log.Printf("Pod Watch(%s): recoverable error: %+v\n", podName, event.Object)
+				log.Info().Msgf("Pod Watch(%s): recoverable error: %+v\n", podName, event.Object)
 				return false, nil
 			}
 
 			eventHandler(event)
 
 			if event.Type == watch.Deleted {
-				log.Printf("Pod Watch(%s): pod deleted\n", podName)
+				log.Info().Msgf("Pod Watch(%s): pod deleted\n", podName)
 				return true, nil
 			}
 			return false, nil
@@ -74,9 +75,9 @@ func WatchPod(ctx context.Context, namespace, podName string, eventHandler Event
 		// Since cancellation is the only way we exit, just ignore it.
 		if err != nil && err != wait.ErrWaitTimeout {
 			// TODO: should we do something about this??
-			log.Printf("Pod Watch(%s): terminal error: %v\n", podName, err)
+			log.Info().Msgf("Pod Watch(%s): terminal error: %v\n", podName, err)
 		}
-		log.Printf("Pod Watch(%s): done\n", podName)
+		log.Info().Msgf("Pod Watch(%s): done\n", podName)
 	}()
 
 	return nil
